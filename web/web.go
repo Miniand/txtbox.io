@@ -27,7 +27,11 @@ func New() (*martini.ClassicMartini, error) {
 	}
 	m := martini.Classic()
 	m.Map(session)
-	m.Get("/", controller.Home)
+	m.Get("/:id/:user\\.:extension", controller.TxtShow)
+	m.Get("/:id/:user", controller.TxtShow)
+	m.Get("/:id\\.:extension", controller.TxtShow)
+	m.Get("/:id", controller.TxtShow)
 	m.Post("/", controller.TxtCreate)
+	m.Get("/", controller.Home)
 	return m, nil
 }
