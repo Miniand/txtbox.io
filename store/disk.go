@@ -1,12 +1,13 @@
 package store
 
 import (
-	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Miniand/txtbox.io/str"
@@ -14,6 +15,9 @@ import (
 
 const (
 	LatestSymlink = "latest"
+	MetaDir       = "meta"
+	UsersDir      = "users"
+	PublicFile    = "public"
 )
 
 var filenameRegexp = regexp.MustCompile(`^(\d+);(.*);(.*)$`)
@@ -29,13 +33,25 @@ func NewDiskStore(location string) *DiskStore {
 }
 
 func ParseFilename(filename string) (rev int, title, by string, err error) {
-	matches := filenameRegexp.FindStringSubmatch(filename)
-	if matches == nil {
-		err = errors.New("could not parse filename")
-	} else {
-		rev, err = strconv.Atoi(matches[1])
-		title = matches[2]
-		by = matches[3]
+	parts := strings.Split(filename, ";")
+	rev, err = strconv.Atoi(parts[0])
+	if len(parts) > 1 {
+		title = parts[1]
+	}
+	if len(parts) > 2 {
+		by = parts[2]
+	}
+	return
+}
+
+func ParseUser(filename string) (user string, perm int, name string, err error) {
+	parts := strings.Split(filename, ";")
+	user = parts[0]
+	if len(parts) > 1 {
+		perm, err = strconv.Atoi(parts[1])
+	}
+	if len(parts) > 2 {
+		name = parts[2]
 	}
 	return
 }
@@ -53,7 +69,10 @@ func (ds *DiskStore) Create() (File, error) {
 			return nil, err
 		}
 	}
-	if err := os.MkdirAll(fileLoc, 0755); err != nil {
+	if err := os.MkdirAll(path.Join(fileLoc, MetaDir), 0755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(path.Join(fileLoc, UsersDir), 0755); err != nil {
 		return nil, err
 	}
 	return &DiskFile{
@@ -63,11 +82,18 @@ func (ds *DiskStore) Create() (File, error) {
 }
 
 func (ds *DiskStore) Find(id string) (File, error) {
-	return nil, nil
+	fileLoc := path.Join(ds.Location, id)
+	if _, err := os.Stat(fileLoc); os.IsNotExist(err) {
+		return nil, ErrNotFound
+	}
+	return &DiskFile{
+		id:       id,
+		location: fileLoc,
+	}, nil
 }
 
 func (ds *DiskStore) Delete(id string) error {
-	return nil
+	return os.RemoveAll(path.Join(ds.Location, id))
 }
 
 type DiskFile struct {
@@ -79,16 +105,46 @@ func (df *DiskFile) Id() (string, error) {
 	return df.id, nil
 }
 
-func (df *DiskFile) Visibility() (int, error) {
-	return 0, nil
+func (df *DiskFile) PublicFilename() string {
+	return path.Join(df.location, MetaDir, PublicFile)
 }
 
-func (df *DiskFile) SetVisibility(vis int) error {
-	return nil
+func (df *DiskFile) RevisionFilename(rev int) string {
+	return path.Join(df.location, strconv.Itoa(rev))
+}
+
+func (df *DiskFile) Visibility() (int, error) {
+	if _, err := os.Stat(df.PublicFilename()); err != nil {
+		if os.IsNotExist(err) {
+			return VisPrivate, nil
+		}
+		return 0, err
+	}
+	return VisPublic, nil
+}
+
+func (df *DiskFile) SetVisibility(vis int) (err error) {
+	if vis == 1 {
+		f, err := os.Create(df.PublicFilename())
+		if err != nil {
+			f.Close()
+			if os.IsExist(err) {
+				err = nil
+			}
+		}
+	} else {
+		err := os.Remove(df.PublicFilename())
+		if os.IsNotExist(err) {
+			err = nil
+		}
+	}
+	return
 }
 
 func (df *DiskFile) Revision(num int) (Revision, error) {
-	return nil, nil
+	return &DiskRevision{
+		filename: df.RevisionFilename(num),
+	}, nil
 }
 
 func (df *DiskFile) latestRevisionNum() (int, error) {
@@ -104,7 +160,10 @@ func (df *DiskFile) latestRevisionNum() (int, error) {
 }
 
 func (df *DiskFile) Latest() (Revision, error) {
-	return nil, nil
+	filename, err := os.Readlink(df.latestPath())
+	return &DiskRevision{
+		filename: filename,
+	}, err
 }
 
 func (df *DiskFile) latestPath() string {
@@ -112,11 +171,29 @@ func (df *DiskFile) latestPath() string {
 }
 
 func (df *DiskFile) Save(body io.Reader, title, by string) (Revision, error) {
-	_, err := df.latestRevisionNum()
+	num, err := df.latestRevisionNum()
 	if err != nil {
 		return nil, err
 	}
-	return nil, nil
+	num += 1
+	filename := path.Join(df.location, fmt.Sprintf("%d;%s;%s", num, title, by))
+	f, err := os.Create(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, body); err != nil {
+		return nil, err
+	}
+	if err := os.Symlink(filename, df.RevisionFilename(num)); err != nil {
+		return nil, err
+	}
+	if err := os.Symlink(filename, df.latestPath()); err != nil {
+		return nil, err
+	}
+	return &DiskRevision{
+		filename: filename,
+	}, nil
 }
 
 func (df *DiskFile) Users() ([]User, error) {
@@ -143,26 +220,35 @@ func (df *DiskFile) DeleteUser(id string) error {
 	return nil
 }
 
-type DiskRevision struct{}
+type DiskRevision struct {
+	filename string
+}
 
 func (dr *DiskRevision) Title() (string, error) {
-	return "", nil
+	_, title, _, err := ParseFilename(path.Base(dr.filename))
+	return title, err
 }
 
 func (dr *DiskRevision) Body() (io.Reader, error) {
-	return nil, nil
+	return os.Open(dr.filename)
 }
 
 func (dr *DiskRevision) By() (string, error) {
-	return "", nil
+	_, _, by, err := ParseFilename(path.Base(dr.filename))
+	return by, err
 }
 
 func (dr *DiskRevision) Num() (int, error) {
-	return 0, nil
+	num, _, _, err := ParseFilename(path.Base(dr.filename))
+	return num, err
 }
 
 func (dr *DiskRevision) At() (time.Time, error) {
-	return time.Now(), nil
+	fi, err := os.Stat(dr.filename)
+	if err != nil {
+		return time.Now(), err
+	}
+	return fi.ModTime(), nil
 }
 
 type DiskUser struct{}

@@ -65,6 +65,41 @@ func TestDiskFile_Save(t *testing.T) {
 	}
 }
 
+func TestDiskFile_Find(t *testing.T) {
+	var s Store
+	s = NewDiskStore(os.TempDir())
+	f, err := s.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := f.Id()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id == "" {
+		t.Fatal("Expected the file to have an ID.")
+	}
+	rev, err := f.Save(bytes.NewBufferString("blah"), "blah file", "egg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2, err := s.Find(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev, err = f2.Latest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	title, err := rev.Title()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title != "blah file" {
+		t.Fatalf("Expected blah file, got %s", title)
+	}
+}
+
 func TestDiskStore_Delete(t *testing.T) {
 	var s Store
 	s = NewDiskStore(os.TempDir())

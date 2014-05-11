@@ -1,19 +1,24 @@
 package store
 
 import (
+	"errors"
 	"io"
 	"time"
 )
 
 const (
-	VIS_PRIVATE = iota
-	VIS_PUBLIC
+	VisPrivate = iota
+	VisPublic
 )
 
 const (
-	PERM_READ = iota
-	PERM_WRITE
-	PERM_ADMIN
+	PermRead = iota
+	PermWrite
+	PermAdmin
+)
+
+var (
+	ErrNotFound = errors.New("could not find file")
 )
 
 type Store interface {
