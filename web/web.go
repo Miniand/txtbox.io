@@ -20,6 +20,7 @@ func New() (*martini.ClassicMartini, error) {
 	m.Get("/:id/:user\\.:extension", controller.TxtShow)
 	m.Get("/:id/:user", controller.TxtShow)
 	m.Get("/:id\\.:extension", controller.TxtShow)
+	m.Post("/:id", controller.TxtUpdate)
 	m.Get("/:id", controller.TxtShow)
 	m.Post("/", controller.TxtCreate)
 	m.Get("/", controller.Home)

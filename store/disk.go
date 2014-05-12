@@ -155,7 +155,7 @@ func (df *DiskFile) latestRevisionNum() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	num, _, _, err := ParseFilename(f)
+	num, _, _, err := ParseFilename(path.Base(f))
 	return num, err
 }
 
@@ -173,7 +173,7 @@ func (df *DiskFile) latestPath() string {
 func (df *DiskFile) Save(body io.Reader, title, by string) (Revision, error) {
 	num, err := df.latestRevisionNum()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get latest revision num, %v", err)
 	}
 	num += 1
 	filename := path.Join(df.location, fmt.Sprintf("%d;%s;%s", num, title, by))
@@ -186,6 +186,9 @@ func (df *DiskFile) Save(body io.Reader, title, by string) (Revision, error) {
 		return nil, err
 	}
 	if err := os.Symlink(filename, df.RevisionFilename(num)); err != nil {
+		return nil, err
+	}
+	if err := os.RemoveAll(df.latestPath()); err != nil {
 		return nil, err
 	}
 	if err := os.Symlink(filename, df.latestPath()); err != nil {

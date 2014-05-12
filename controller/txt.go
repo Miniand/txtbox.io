@@ -9,8 +9,7 @@ import (
 	"github.com/go-martini/martini"
 )
 
-func TxtCreate(st store.Store, res http.ResponseWriter,
-	req *http.Request) {
+func TxtCreate(st store.Store, res http.ResponseWriter, req *http.Request) {
 	fi, err := st.Create()
 	if err != nil {
 		panic(err)
@@ -26,9 +25,33 @@ func TxtCreate(st store.Store, res http.ResponseWriter,
 	http.Redirect(res, req, fmt.Sprintf("/%s", id), http.StatusFound)
 }
 
-func TxtShow(st store.Store, res http.ResponseWriter,
+func TxtUpdate(st store.Store, res http.ResponseWriter, req *http.Request,
 	params martini.Params) {
 	fi, err := st.Find(params["id"])
+	if err == store.ErrNotFound {
+		res.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		panic(err)
+	}
+	_, err = fi.Save(req.Body, "", "")
+	if err != nil {
+		panic(err)
+	}
+	id, err := fi.Id()
+	if err != nil {
+		panic(err)
+	}
+	http.Redirect(res, req, fmt.Sprintf("/%s", id), http.StatusFound)
+}
+
+func TxtShow(st store.Store, res http.ResponseWriter, params martini.Params) {
+	fi, err := st.Find(params["id"])
+	if err == store.ErrNotFound {
+		res.WriteHeader(http.StatusNotFound)
+		return
+	}
 	if err != nil {
 		panic(err)
 	}
